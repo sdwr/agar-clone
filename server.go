@@ -183,6 +183,7 @@ func listenToSocket(client Client) {
             }
            var message Message
            json.Unmarshal(msg, &message)
+	   message.Sender = &client
            incomingMessages = append(incomingMessages, message)
 
    }
