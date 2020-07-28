@@ -6,12 +6,17 @@ const ctx = canvas.getContext('2d');
 const socket = new Websocket("ws://"+SERVER_URL+"/socket");
 
 const gameState = {};
-
+const id = "";
 socket.onopen = function(e) {
 	alert("socket connection open")
 }
 socket.onmessage = function(e) {
-	gameState = JSON.parse(e.data);
+	let message = JSON.parse(e.data);
+	if(message.type === "ID") {
+		id = message.Sender
+	} else if(message.type === "STATE") {
+		gameState = message.GameState
+	}
 }
 
 

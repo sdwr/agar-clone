@@ -46,6 +46,7 @@ type Message struct {
     Type string
     mouseX float32
     mouseY float32
+    GameState State
 }
 
 //***************************************************************************
@@ -120,7 +121,8 @@ func handleIncomingMessages() {
 			MousePos: Position{x:0,y:0,},
 			Speed: 10,
 			Size: 5,}
-	    }
+		emitId(msg.Sender)
+		}
             if msg.Type == "MOUSEPOS" {
 		    player := gameState.Players[msg.Sender]
 		    player.MousePos = Position{x:msg.mouseX,y:msg.mouseY,}
@@ -191,15 +193,25 @@ func startServer() {
 //***************************************************************************
 //SOCKET FUNCTIONS
 //***************************************************************************
+func emitId(client *Client) {
+	message := Message{Sender:client,Type:"ID",}
+	encodedMessage := json.Marshal(message)
+	if(err != nil) {
+		log.Println(err)
+		return
+	}
+	client.Connection.WriteMessage(websocket.TextMessage,encodedMessage)
+}
 
 func broadcastState(state State) {
-    encodedState, err := json.Marshal(state)
-    if(err != nil) {
+	message := Message{Type:"STATE",GameState:state,}
+	encodedMessage := json.Marshal(message)
+	if(err != nil) {
 	    log.Println(err)
             return
     }
     for client, _ := range clients {
-        client.Connection.WriteMessage(websocket.TextMessage, encodedState)
+        client.Connection.WriteMessage(websocket.TextMessage, encodedMessage)
     }
 }
 //does mux router make a subroutine for this?
