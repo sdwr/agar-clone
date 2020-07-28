@@ -2,11 +2,12 @@ package main
 
 import (
     "time"
+    "math"
     "math/rand"
-	"fmt"
-	"log"
-	"net/http"
-	"io/ioutil"
+    "fmt"
+    "log"
+    "net/http"
+    "io/ioutil"
     "encoding/json"
 
     "github.com/gorilla/mux"
@@ -15,14 +16,14 @@ import (
 
 type State struct {
     Size int
-    Players []Player
+    Players map[*Client]Player
     Pellets []Position
 }
 
 type Player struct {
-    ID int 
+    ID int
     Name string
-    Coords []Position
+    Coords Position
     MousePos Position
     Speed float32
     Size int
@@ -36,7 +37,7 @@ type Position struct {
 type Client struct {
     Connection *websocket.Conn
     Name string
-    ID int 
+    ID int
 }
 
 //types are START and MOUSEPOS
@@ -75,13 +76,25 @@ func gameLoop(state State) {
     elapsedTime := currentTime.Sub(lastUpdated).Milliseconds()
     updatePlayers(state.Players, int(elapsedTime))
     checkCollisions()
-    //addPellets(state)
     lastUpdated = currentTime
 }
 
-func updatePlayers(players []Player, elapsedMillis int) {
-    for i:=0; i < len(players); i++ {
-        // update coords here (trig :()
+func updatePlayers(players map[*Client]Player, elapsedMillis int) {
+	for _, curr := range players {
+	dist := curr.Speed * float32(elapsedMillis/1000)
+	dir := addPos(curr.MousePos, negatePos(curr.Coords))
+	angle := math.Atan(float64(dir.y/dir.x))
+	if dir.x < 0 {
+		angle += math.Pi
+	}
+	if angle > 2*math.Pi {
+		angle -= 2*math.Pi
+	}
+	if angle < 0 {
+		angle += 2*math.Pi
+	}
+	scaledDir := Position{x:dist*float32(math.Cos(angle)),y:dist*float32(math.Sin(angle))}
+	curr.Coords = addPos(scaledDir, curr.Coords)
     }
 }
 
@@ -101,9 +114,16 @@ func handleIncomingMessages() {
 
         for _, msg := range messages {
             if msg.Type == "START" {
-            }
+           	gameState.Players[msg.Sender] = Player{
+			Name: "",
+			Coords: getRandomPos(gameState.Size, gameState.Size),
+			MousePos: Position{x:0,y:0,},
+			Speed: 10,
+			Size: 5,}
+	    }
             if msg.Type == "MOUSEPOS" {
-
+		    player := gameState.Players[msg.Sender]
+		    player.MousePos = Position{x:msg.mouseX,y:msg.mouseY,}
             }
         }
 }
@@ -121,6 +141,14 @@ func getRandomPos(maxX int,maxY int) Position {
     pos.x = randomSource.Float32() * float32(maxX)
     pos.y = randomSource.Float32() * float32(maxY)
     return pos
+}
+
+func negatePos(pos Position) Position {
+	return Position{x:pos.x*-1, y:pos.y*-1}
+}
+
+func addPos(pos1 Position, pos2 Position) Position {
+	return Position{pos1.x+pos2.x, pos1.y+pos2.y}
 }
 
 //******************************************************************************
@@ -167,14 +195,15 @@ func startServer() {
 func broadcastState(state State) {
     encodedState, err := json.Marshal(state)
     if(err != nil) {
-            log.Println(err)
+	    log.Println(err)
             return
     }
     for client, _ := range clients {
         client.Connection.WriteMessage(websocket.TextMessage, encodedState)
     }
 }
-
+//does mux router make a subroutine for this?
+//gonna have to test this out
 func listenToSocket(client Client) {
     for {
             _, msg, err := client.Connection.ReadMessage()
@@ -195,14 +224,15 @@ func listenToSocket(client Client) {
 
 func initGlobals() {
     clients = make(map[*Client]bool)
+    gameState.Players = make(map[*Client]Player)
     randomSource = rand.New(rand.NewSource(99))
     lastID = 0
     upgrader = websocket.Upgrader{}
 }
 
-func run(state State) {
-    gameLoop(state)
-    broadcastState(state)
+func run() {
+    gameLoop(gameState)
+    broadcastState(gameState)
     handleIncomingMessages()
 }
 
@@ -213,6 +243,6 @@ func main() {
     initState(gameState)
     lastUpdated = time.Now()
     for {
-            run(gameState)
+            run()
     }
 }
