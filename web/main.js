@@ -6,11 +6,13 @@ const canvas = document.getElementById("game-canvas");
 const playerInfo = document.getElementById("player-info");
 const mouseInfo = document.getElementById("mouse-info");
 const messageInfo = document.getElementById("message-info");
+const fpsInfo = document.getElementById("fps-info");
 const ctx = canvas.getContext('2d');
 const socket = new WebSocket("ws://"+SERVER_URL+"/socket");
 
-const windowSize = 800;
+const windowSize = 400;
 
+let lastUpdated = 0;
 
 let gameState = {Players:[]};
 let id = 1;
@@ -49,10 +51,10 @@ socket.onmessage = function(e) {
 		messageInfo.textContent=JSON.stringify(message)
 		gameState = message.GameState
 		let player = gameState.Players[id]
-		playerInfo.textContent=JSON.stringify(player);
 		if(player) {
 			playerCoords = {X:player.Coords.X, Y:player.Coords.Y}
 		}
+		playerInfo.textContent=JSON.stringify(playerCoords) + JSON.stringify(player);
 	}
 }
 
@@ -67,26 +69,43 @@ function startGame(){
 	sendMessage(startMessage)
 }
 
+function convertScreenToGameCoords(pos) {
+	return {X: pos.X + playerCoords.X - windowSize/2,
+		Y: pos.Y + playerCoords.Y - windowSize/2}
+}
+
+function convertGameCoordsToScreen(pos) {
+	return {X: pos.X - playerCoords.X + windowSize/2,
+		Y: pos.Y - playerCoords.Y + windowSize/2}
+}
+
 function updateMousePos() {
 	let posMessage = {}
 	posMessage.Type = "MOUSEPOS"
 	posMessage.ID = id
-	posMessage.MouseX = mousePos.X + playerCoords.X - windowSize/2
-	posMessage.MouseY = mousePos.Y + playerCoords.Y - windowSize/2
+	let gameCoords = convertScreenToGameCoords(mousePos)
+	posMessage.MouseX = gameCoords.X
+	posMessage.MouseY = gameCoords.Y 
 	mouseInfo.textContent=JSON.stringify(posMessage);
 	sendMessage(posMessage)
 }
 
 //DRAW FUNCTIONS
 function render() {
+	ctx.fillStyle = 'black'
+	ctx.fillRect(0,0,windowSize,windowSize)
 	ctx.fillStyle = 'green'
-	ctx.fillRect(0,0,windowSize, windowSize)
+	let screenCoords = convertGameCoordsToScreen({X:0,Y:0})
+	ctx.fillRect(screenCoords.X, screenCoords.Y, gameState.Size, gameState.Size)
 	ctx.fillStyle = 'red'
 	let p = gameState.Players
 	Object.keys(p).forEach(key => {
-		let midX = p[key].Coords.X - playerCoords.X + 10
-		let midY = p[key].Coords.Y - playerCoords.Y + 10
-		ctx.fillRect(midX-10, midY-10, midX+10, midY+10)
+		let player = p[key]
+		let screenCoords = convertGameCoordsToScreen(player.Coords)
+		let halfSize = player.Size/2
+		let midX = screenCoords.X 
+		let midY = screenCoords.Y
+		ctx.fillRect(midX-halfSize, midY-halfSize, halfSize*2, halfSize*2)
 	})
 }
 
@@ -94,8 +113,21 @@ const startButton = document.getElementById("start-button");
 startButton.onclick = async function(){
 	startGame()
 	while(true){
+		let now = Date.now()
+		fpsInfo.textContent = "" + now-lastUpdated + " ms" 
 		render()
 		updateMousePos()
-		await new Promise(r => setTimeout(r, 33)) 
+		lastUpdated = now
+		await new Promise(r => setTimeout(r, 10))
+	}
+}
+
+const toggleDebug = document.getElementById("toggle-debug");
+toggleDebug.onclick = function() {
+	let debugPanel = document.getElementById("debug-info")
+	if (debugPanel.style.display == "none") {
+		debugPanel.style.display = "block";
+	} else {
+		debugPanel.style.display = "none"
 	}
 }

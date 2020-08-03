@@ -22,6 +22,18 @@ type State struct {
     Pellets []Position
 }
 
+type OutgoingState struct {
+    Size int
+    CurrentPlayer Player
+    Objects []Object
+}
+
+type Object struct {
+    Type string
+    ID int
+    Coords Position
+}
+
 type Player struct {
     ID int
     Name string
@@ -91,34 +103,57 @@ var randomSource *rand.Rand
 var upgrader websocket.Upgrader
 
 func initState() {
-    gameState.Size = 100
-//    addPellets(500)
+    gameState.Size = 1000
+    //addPellets(500)
 }
 
+func removeFromSlice(index int, slice []*Object) []*Object {
+	slice[index] = slice[len(slice)-1]
+	return slice[:len(slice)-1]
+}
 
 
 func gameLoop() {
     elapsedTime := timeElapsed(lastUpdated)
+    if elapsedTime.Milliseconds() > 30 {
+	    loggerino.log(message, "Warning: last frame took %d ms to run", elapsedTime.Milliseconds())
+    }
     minimumLoop, _ := time.ParseDuration("33ms")
     time.Sleep(minimumLoop - elapsedTime)
     elapsedTime = timeElapsed(lastUpdated)
     loggerino.log(micro, "starting game loop after %d ms ",elapsedTime.Milliseconds())
-    updatePlayers(gameState.Players, int(elapsedTime.Milliseconds()))
+    updatePlayers(int(elapsedTime.Milliseconds()))
     checkCollisions()
     lastUpdated = time.Now()
 }
 
-func updatePlayers(players map[int]Player, elapsedMillis int) {
-	for _, curr := range players {
-	dist := curr.Speed * float64(elapsedMillis/1000)
-	dir := addPos(curr.MousePos, negatePos(curr.Coords))
-	scaledDir := multPos(normalizeVector(dir),dist)
-	curr.Coords = addPos(scaledDir, curr.Coords)
+func updatePlayers(elapsedMillis int) {
+	players := gameState.Players
+	for key, curr := range players {
+            dist := curr.Speed * float64(elapsedMillis)
+	    dir := addPos(curr.MousePos, negatePos(curr.Coords))
+	    scaledDir := multPos(normalizeVector(dir),dist)
+	    curr.Coords = addPos(scaledDir, curr.Coords)
+	    //check wall boundary
+	    gameSizeFloat := float64(gameState.Size)
+	    halfSize := float64(curr.Size/2)
+	    if curr.Coords.X < 0+halfSize {
+		curr.Coords.X = 0+halfSize
+	    }
+	    if curr.Coords.X > gameSizeFloat-halfSize {
+		curr.Coords.X = gameSizeFloat-halfSize
+	    }
+	    if curr.Coords.Y < 0+halfSize {
+		curr.Coords.Y = 0+halfSize
+	    }
+	    if curr.Coords.Y > gameSizeFloat-halfSize {
+		curr.Coords.Y = gameSizeFloat-halfSize
+	    }
+	    gameState.Players[key]=curr
     }
 }
 
 func checkCollisions() {
-    //needs to be less than n^2
 }
 
 func addPellets(amt int) {
@@ -138,8 +173,8 @@ func handleIncomingMessages() {
 			Name: "",
 			Coords: getRandomPos(gameState.Size, gameState.Size),
 			MousePos: Position{X:0,Y:0,},
-			Speed: 10,
-			Size: 5,}
+			Speed: 0.03,
+			Size: 20,}
 		emitID(msg.Sender)
 		}
             if msg.Type == "MOUSEPOS" {

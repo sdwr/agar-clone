@@ -13,14 +13,21 @@
 </head>
 <body>
 	<h2>Agar Clonio</h2>
-	<div id="debug-info">
+	<div id="debug-info" style="display:none">
+		Player: 
 		<span id="player-info"></span>
 		<br>
+		Mouse: 
 		<span id="mouse-info"></span>
 		<br>
+		Message: 
 		<span id="message-info"></span>
+		<br>
+		Fps: 
+		<span id="fps-info"></span>
 	</div>
-	<canvas id="game-canvas" class="canvas"></canvas>
+	<button id="toggle-debug" onclick="toggleDebug()">Toggle Debug</button>
+	<canvas id="game-canvas" width="400px" height="400px"></canvas>
 	<button id="start-button">Start</button>
 	<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
 	<script src="main.js" type="module"></script>
