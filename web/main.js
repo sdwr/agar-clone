@@ -18,6 +18,7 @@ let gameState = {Players:[]};
 let id = 1;
 
 let playerCoords = {X:0,Y:0}
+let player = null
 let mousePos = {X:0,Y:0}
 //DEFINITIONS
 class Position {
@@ -48,9 +49,9 @@ socket.onmessage = function(e) {
 	if(message.Type === "ID") {
 		id = message.ID
 	} else if(message.Type === "STATE") {
-		messageInfo.textContent=JSON.stringify(message)
-		gameState = message.GameState
-		let player = gameState.Players[id]
+		//messageInfo.textContent=JSON.stringify(message)
+		gameState = message.State
+		player = gameState.CurrentPlayer
 		if(player) {
 			playerCoords = {X:player.Coords.X, Y:player.Coords.Y}
 		}
@@ -97,16 +98,36 @@ function render() {
 	ctx.fillStyle = 'green'
 	let screenCoords = convertGameCoordsToScreen({X:0,Y:0})
 	ctx.fillRect(screenCoords.X, screenCoords.Y, gameState.Size, gameState.Size)
-	ctx.fillStyle = 'red'
-	let p = gameState.Players
-	Object.keys(p).forEach(key => {
-		let player = p[key]
-		let screenCoords = convertGameCoordsToScreen(player.Coords)
-		let halfSize = player.Size/2
-		let midX = screenCoords.X 
-		let midY = screenCoords.Y
-		ctx.fillRect(midX-halfSize, midY-halfSize, halfSize*2, halfSize*2)
+	let obs = gameState.Objects
+	Object.keys(obs).forEach(key => {
+		let o = obs[key]
+		drawObject(o)
 	})
+	if(player && player.RespawnMillis > 0) {
+		drawDeathScreen()
+	}
+}
+
+function drawDeathScreen() {
+	ctx.fillStyle = "rgba(125,125,125,0.4)"
+	ctx.fillRect(0,0,windowSize,windowSize)
+}
+
+function drawObject(o) {
+	let screenCoords = convertGameCoordsToScreen(o.Coords)
+	let halfSize = o.Size/2
+	let midX = screenCoords.X 
+	let midY = screenCoords.Y
+	if(o.Type == "PELLET") {
+		ctx.fillStyle = 'yellow'	
+	} else if(o.Type == "PLAYER") {
+		ctx.fillStyle = 'red'
+	}
+	if(o.ID == player.ID) {
+		ctx.fillStyle = "blue"
+	}
+	ctx.fillRect(midX-halfSize, midY-halfSize, halfSize*2, halfSize*2)
+
 }
 
 const startButton = document.getElementById("start-button");

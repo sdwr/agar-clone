@@ -13,6 +13,9 @@
 </head>
 <body>
 	<h2>Agar Clonio</h2>
+	<canvas id="game-canvas" width="400px" height="400px"></canvas>
+<button id="toggle-debug" onclick="toggleDebug()">Toggle Debug</button>
+	<button id="start-button">Start</button>
 	<div id="debug-info" style="display:none">
 		Player: 
 		<span id="player-info"></span>
@@ -26,9 +29,6 @@
 		Fps: 
 		<span id="fps-info"></span>
 	</div>
-	<button id="toggle-debug" onclick="toggleDebug()">Toggle Debug</button>
-	<canvas id="game-canvas" width="400px" height="400px"></canvas>
-	<button id="start-button">Start</button>
 	<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
 	<script src="main.js" type="module"></script>
 </body>

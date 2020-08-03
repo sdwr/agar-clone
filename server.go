@@ -17,30 +17,35 @@ import (
 )
 
 type State struct {
-    Size int
+    Size float64
+    ChunkSize int
+    PlayerSize float64 
+    Chunks map[int][]Object
     Players map[int]Player
-    Pellets []Position
 }
 
 type OutgoingState struct {
-    Size int
+    Size float64
     CurrentPlayer Player
     Objects []Object
 }
 
 type Object struct {
     Type string
+    Size float64
     ID int
     Coords Position
 }
 
 type Player struct {
+    Type string
     ID int
     Name string
     Coords Position
     MousePos Position
     Speed float64
-    Size int
+    Size float64
+    RespawnMillis float64
 }
 
 type Position struct {
@@ -61,7 +66,7 @@ type Message struct {
     Type string
     MouseX float64
     MouseY float64
-    GameState State
+    State OutgoingState
 }
 
 type Loggerino struct {
@@ -104,12 +109,78 @@ var upgrader websocket.Upgrader
 
 func initState() {
     gameState.Size = 1000
-    //addPellets(500)
+    gameState.PlayerSize = 20
+    gameState.ChunkSize = 250
+    createChunks()
+    addPellets(500)
 }
 
-func removeFromSlice(index int, slice []*Object) []*Object {
-	slice[index] = slice[len(slice)-1]
-	return slice[:len(slice)-1]
+//chunksize must be no greater than 1/1000th of the map size 
+func createChunks() {
+    gameState.Chunks = make(map[int][]Object)
+    for x:= 0; x < int(gameState.Size); x+= gameState.ChunkSize {
+	for y:=0; y < int(gameState.Size); y += gameState.ChunkSize {
+		gameState.Chunks[posToChunkIndex(Position{X:float64(x),Y:float64(y)})] = make([]Object,1,10)
+	}
+    }
+}
+
+func posToChunkIndex(pos Position) int {
+    return (int(pos.X)/gameState.ChunkSize) * 100 + (int(pos.Y)/gameState.ChunkSize)
+}
+
+func addToChunk(o Object) {
+    chunk := gameState.Chunks[posToChunkIndex(o.Coords)]
+    gameState.Chunks[posToChunkIndex(o.Coords)] = append(chunk, o)
+}
+
+func removeFromChunk(o Object) {
+	chunkIndex := posToChunkIndex(o.Coords)
+	chunk := gameState.Chunks[chunkIndex]
+	for i, v := range chunk {
+	    if v == o {
+		chunk[i] = chunk[len(chunk)-1]
+	        gameState.Chunks[chunkIndex] = chunk[:len(chunk)-1]
+	    }
+	}
+}
+
+func getSurroundingChunks(pos Position) []Object {
+	objects := make([]Object,0,100)
+	for x := -1; x <= 1; x++ {
+		for y := -1; y <= 1; y++ {
+			chunkPos := addPos(pos, Position{X:float64(x*gameState.ChunkSize),Y:float64(y*gameState.ChunkSize)})
+			chunk := gameState.Chunks[posToChunkIndex(chunkPos)]
+			objects = append(objects, chunk...)
+		}
+	}
+	return objects
+}
+
+func createPlayer(id int) Player {
+	return Player{	Type: "PLAYER",
+			ID: id,
+			Name: "",
+			Coords: getRandomPos(int(gameState.Size), int(gameState.Size)),
+			MousePos: Position{X:0,Y:0,},
+			Size: gameState.PlayerSize,
+			Speed: 0,}
+
+}
+
+func createPlayerObject(p Player) Object {
+	return Object{ Type: "PLAYER",
+			ID: p.ID,
+			Size: p.Size,
+			Coords: p.Coords,}
+}
+
+func createPlayerObjects() []Object {
+	pos := make([]Object,0,10)
+	for _, p := range gameState.Players {
+		pos = append(pos, createPlayerObject(p))
+	}
+	return pos
 }
 
 
@@ -130,6 +201,10 @@ func gameLoop() {
 func updatePlayers(elapsedMillis int) {
 	players := gameState.Players
 	for key, curr := range players {
+	    if curr.RespawnMillis > 0 {
+		calculateRespawn(curr, elapsedMillis)
+	    	curr = gameState.Players[curr.ID]
+	    }
             dist := curr.Speed * float64(elapsedMillis)
 	    dir := addPos(curr.MousePos, negatePos(curr.Coords))
 	    scaledDir := multPos(normalizeVector(dir),dist)
@@ -153,13 +228,113 @@ func updatePlayers(elapsedMillis int) {
     }
 }
 
+func calculateRespawn(p Player, millis int) {
+	p.RespawnMillis -= float64(millis)
+	gameState.Players[p.ID]=p
+	if p.RespawnMillis <= 0 {
+		p.Size = gameState.PlayerSize
+		p.Coords = getRandomPos(int(gameState.Size), int(gameState.Size))
+		gameState.Players[p.ID]=p
+		calculateSpeed(p)
+	}
+}
+
+func checkCollision(p Player, o Object) bool {
+	pLeft := p.Coords.X-p.Size/2
+	pRight := p.Coords.X+p.Size/2
+	pUp := p.Coords.Y-p.Size/2
+	pDown := p.Coords.Y + p.Size/2
+	
+	oLeft := o.Coords.X-o.Size/2
+	oRight := o.Coords.X+o.Size/2
+	oUp := o.Coords.Y-o.Size/2
+	oDown := o.Coords.Y + o.Size/2
+
+	xOverlap := 0
+	yOverlap := 0
+	if oLeft < pRight && oLeft > pLeft {
+		xOverlap = 1
+	}else if pLeft < oRight && pLeft > oLeft {
+		xOverlap = 1
+	}
+	if xOverlap > 0 {
+		if pUp < oDown && pUp > oUp {
+			yOverlap = 1
+		} else if oUp < pDown && oUp > pUp {
+			yOverlap = 1
+		}
+		if xOverlap > 0 && yOverlap > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func checkCollisions() {
+	players := gameState.Players
+	for _, curr := range players {
+	//check obj collisions
+	chunkIndex := posToChunkIndex(curr.Coords)
+	chunk := gameState.Chunks[chunkIndex]
+		for _, o := range chunk {
+		   if checkCollision(curr, o) && curr.ID != o.ID {
+			resolveCollision(curr, o)
+		   }
+		}
+	//check player collisions n^2 :(
+		for _, other := range players {
+			o := createPlayerObject(other)
+			if curr.ID != o.ID && checkCollision(curr, o) {
+				resolveCollision(curr, o)
+			}
+		}
+	}
+}
+
+func resolveCollision(p Player, o Object) {
+	if(o.Type == "PELLET") {
+		removeFromChunk(o)
+		increaseSize(p)
+		createPellet()
+	}
+	if(o.Type == "PLAYER") {
+		if o.Size > p.Size {
+			killPlayer(p)
+		} else if p.Size > o.Size {
+			killPlayer(gameState.Players[o.ID])
+		}
+	}
+}
+
+func killPlayer(p Player) {
+	p.Coords = Position{gameState.Size/2,float64(-20)}
+	p.Size = 0
+	p.Speed = 0
+	p.RespawnMillis = 5000
+	gameState.Players[p.ID] = p
 }
 
 func addPellets(amt int) {
     for i:=0; i < amt; i++ {
-        gameState.Pellets = append(gameState.Pellets, getRandomPos(gameState.Size, gameState.Size))
+	    createPellet()
     }
+}
+
+func createPellet() {
+	    pellet := Object{Type:"PELLET", Size: 5, ID: -1, Coords: getRandomPos(int(gameState.Size), int(gameState.Size))}
+	    addToChunk(pellet)
+
+}
+
+func increaseSize(p Player) {
+	p.Size++
+	gameState.Players[p.ID]=p
+	calculateSpeed(p)
+}
+
+func calculateSpeed(p Player) {
+	p.Speed = (1 / float64(p.Size)) + 0.06
+	gameState.Players[p.ID]=p
 }
 
 func handleIncomingMessages() {
@@ -168,13 +343,9 @@ func handleIncomingMessages() {
 
         for _, msg := range messages {
             if msg.Type == "START" {
-           	gameState.Players[msg.Sender.ID] = Player{
-			ID: msg.Sender.ID,
-			Name: "",
-			Coords: getRandomPos(gameState.Size, gameState.Size),
-			MousePos: Position{X:0,Y:0,},
-			Speed: 0.03,
-			Size: 20,}
+		player := createPlayer(msg.Sender.ID)
+           	gameState.Players[msg.Sender.ID] = player
+		calculateSpeed(player)
 		emitID(msg.Sender)
 		}
             if msg.Type == "MOUSEPOS" {
@@ -274,14 +445,19 @@ func emitID(client *Client) {
 }
 
 func broadcastState() {
-	message := Message{Type:"STATE",GameState:gameState,}
+	outgoingState := OutgoingState{Size:gameState.Size}
+	message := Message{Type:"STATE",State:outgoingState,}
+    loggerino.log(micro, "broadcasting %v to each client:", gameState)
+    for client, _ := range clients {
+	message.State.CurrentPlayer = gameState.Players[client.ID]
+	message.State.Objects = getSurroundingChunks(message.State.CurrentPlayer.Coords)
+	message.State.Objects = append(message.State.Objects, createPlayerObjects()...)
 	encodedMessage, err := json.Marshal(message)
 	if(err != nil) {
             loggerino.log(error, err)
             return
-    }
-    loggerino.log(micro, "broadcasting %v to each client:", gameState)
-    for client, _ := range clients {
+    	}
+
         client.Connection.WriteMessage(websocket.TextMessage, encodedMessage)
 	loggerino.log(micro, "broadcast to client %v", client)
     }
