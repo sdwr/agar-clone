@@ -32,8 +32,8 @@ type Player struct {
 }
 
 type Position struct {
-        x float64
-        y float64
+        X float64
+        Y float64
 }
 
 type Client struct {
@@ -45,9 +45,10 @@ type Client struct {
 //types are START and MOUSEPOS
 type Message struct {
     Sender *Client
+    ID int
     Type string
-    mouseX float64
-    mouseY float64
+    MouseX float64
+    MouseY float64
     GameState State
 }
 
@@ -89,22 +90,22 @@ var randomSource *rand.Rand
 
 var upgrader websocket.Upgrader
 
-func initState(state State) {
-    state.Size = 100
-    addPellets(500, state)
+func initState() {
+    gameState.Size = 100
+//    addPellets(500)
 }
 
 
 
-func gameLoop(state State) {
+func gameLoop() {
     elapsedTime := timeElapsed(lastUpdated)
     minimumLoop, _ := time.ParseDuration("33ms")
     time.Sleep(minimumLoop - elapsedTime)
     elapsedTime = timeElapsed(lastUpdated)
     loggerino.log(micro, "starting game loop after %d ms ",elapsedTime.Milliseconds())
-    updatePlayers(state.Players, int(elapsedTime.Milliseconds()))
+    updatePlayers(gameState.Players, int(elapsedTime.Milliseconds()))
     checkCollisions()
-    lastUpdated = time.Now() 
+    lastUpdated = time.Now()
 }
 
 func updatePlayers(players map[int]Player, elapsedMillis int) {
@@ -120,9 +121,9 @@ func checkCollisions() {
     //needs to be less than n^2
 }
 
-func addPellets(amt int, state State) {
+func addPellets(amt int) {
     for i:=0; i < amt; i++ {
-        state.Pellets = append(state.Pellets, getRandomPos(state.Size, state.Size))
+        gameState.Pellets = append(gameState.Pellets, getRandomPos(gameState.Size, gameState.Size))
     }
 }
 
@@ -133,16 +134,18 @@ func handleIncomingMessages() {
         for _, msg := range messages {
             if msg.Type == "START" {
            	gameState.Players[msg.Sender.ID] = Player{
+			ID: msg.Sender.ID,
 			Name: "",
 			Coords: getRandomPos(gameState.Size, gameState.Size),
-			MousePos: Position{x:0,y:0,},
+			MousePos: Position{X:0,Y:0,},
 			Speed: 10,
 			Size: 5,}
-		emitId(msg.Sender)
+		emitID(msg.Sender)
 		}
             if msg.Type == "MOUSEPOS" {
-		    player := gameState.Players[msg.Sender.ID]
-		    player.MousePos = Position{x:msg.mouseX,y:msg.mouseY,}
+		    player := gameState.Players[msg.ID]
+		    player.MousePos = Position{X:msg.MouseX,Y:msg.MouseY,}
+		    gameState.Players[msg.ID]=player
             }
         }
 }
@@ -162,26 +165,26 @@ func timeElapsed(prev time.Time) time.Duration {
 
 func getRandomPos(maxX int,maxY int) Position {
     var pos Position
-    pos.x = randomSource.Float64() * float64(maxX)
-    pos.y = randomSource.Float64() * float64(maxY)
+    pos.X = randomSource.Float64() * float64(maxX)
+    pos.Y = randomSource.Float64() * float64(maxY)
     return pos
 }
 
 func negatePos(pos Position) Position {
-	return Position{x:pos.x*-1, y:pos.y*-1}
+	return Position{X:pos.X*-1, Y:pos.Y*-1}
 }
 
 func addPos(pos1 Position, pos2 Position) Position {
-	return Position{pos1.x+pos2.x, pos1.y+pos2.y}
+	return Position{pos1.X+pos2.X, pos1.Y+pos2.Y}
 }
 
 func multPos(pos Position, scalar float64) Position {
-	return Position{x:pos.x*scalar,y:pos.y*scalar}
+	return Position{X:pos.X*scalar,Y:pos.Y*scalar}
 }
 
 func normalizeVector(pos Position) Position {
-	scalingFactor := 1 / math.Sqrt(pos.x * pos.x + pos.y * pos.y)
-	return Position{x:pos.x*scalingFactor, y:pos.y*scalingFactor}
+	scalingFactor := 1 / math.Sqrt(pos.X * pos.X + pos.Y * pos.Y)
+	return Position{X:pos.X*scalingFactor, Y:pos.Y*scalingFactor}
 }
 
 //******************************************************************************
@@ -224,8 +227,8 @@ func startServer() {
 //***************************************************************************
 //SOCKET FUNCTIONS
 //***************************************************************************
-func emitId(client *Client) {
-	message := Message{Sender:client,Type:"ID",}
+func emitID(client *Client) {
+	message := Message{ID:client.ID,Type:"ID",}
 	encodedMessage, err := json.Marshal(message)
 	if(err != nil) {
         loggerino.log(error, err)
@@ -235,14 +238,14 @@ func emitId(client *Client) {
 	client.Connection.WriteMessage(websocket.TextMessage,encodedMessage)
 }
 
-func broadcastState(state State) {
-	message := Message{Type:"STATE",GameState:state,}
+func broadcastState() {
+	message := Message{Type:"STATE",GameState:gameState,}
 	encodedMessage, err := json.Marshal(message)
 	if(err != nil) {
             loggerino.log(error, err)
             return
     }
-    loggerino.log(micro, "broadcasting %v to each client:", state)
+    loggerino.log(micro, "broadcasting %v to each client:", gameState)
     for client, _ := range clients {
         client.Connection.WriteMessage(websocket.TextMessage, encodedMessage)
 	loggerino.log(micro, "broadcast to client %v", client)
@@ -280,6 +283,13 @@ func initGlobals() {
     upgrader.CheckOrigin = func(r *http.Request) bool {return true}
 }
 
+func setLogLevel() {
+    args := os.Args[1:]
+    level, _ := strconv.Atoi(args[0])
+    loggerino.Level = LogLevel(level)
+
+}
+
 func runWrapper() {
     for {
 	run()
@@ -287,18 +297,16 @@ func runWrapper() {
 }
 
 func run() {
-    gameLoop(gameState)
-    broadcastState(gameState)
     handleIncomingMessages()
+    gameLoop()
+    broadcastState()
 }
 
 
 func main() {
     initGlobals()
-    args := os.Args[1:]
-    level, _ := strconv.Atoi(args[0])
-    loggerino.Level = LogLevel(level)
-    initState(gameState)
+    setLogLevel()
+    initState()
     lastUpdated = time.Now()
     loggerino.log(prod, "Starting game loop")
     go runWrapper()
