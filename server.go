@@ -9,65 +9,13 @@ import (
     "log"
     "net/http"
     "io/ioutil"
-    "encoding/json"
     "strconv"
 
     "github.com/gorilla/mux"
-    "github.com/gorilla/websocket"
+
+    "github.com/sdwr/agar-clone/socket"
+    . "github.com/sdwr/agar-clone/types"
 )
-
-type State struct {
-    Size float64
-    ChunkSize int
-    PlayerSize float64 
-    Chunks map[int][]Object
-    Players map[int]Player
-}
-
-type OutgoingState struct {
-    Size float64
-    CurrentPlayer Player
-    Objects []Object
-}
-
-type Object struct {
-    Type string
-    Size float64
-    ID int
-    Coords Position
-}
-
-type Player struct {
-    Type string
-    ID int
-    Name string
-    Coords Position
-    MousePos Position
-    Speed float64
-    Size float64
-    RespawnMillis float64
-}
-
-type Position struct {
-        X float64
-        Y float64
-}
-
-type Client struct {
-    Connection *websocket.Conn
-    Name string
-    ID int
-}
-
-//types are START and MOUSEPOS
-type Message struct {
-    Sender *Client
-    ID int
-    Type string
-    MouseX float64
-    MouseY float64
-    State OutgoingState
-}
 
 type Loggerino struct {
     Level LogLevel
@@ -96,16 +44,12 @@ var loggerino Loggerino
 
 var lastID int
 
+var room *socket.Room
+
 var gameState State
 var lastUpdated time.Time
 
-var clients map[*Client]bool
-
-var incomingMessages []Message
-
 var randomSource *rand.Rand
-
-var upgrader websocket.Upgrader
 
 func initState() {
     gameState.Size = 1000
@@ -183,6 +127,9 @@ func createPlayerObjects() []Object {
 	return pos
 }
 
+func removePlayer(id int) {
+    delete(gameState.Players, id)
+}
 
 func gameLoop() {
     elapsedTime := timeElapsed(lastUpdated)
@@ -338,27 +285,21 @@ func calculateSpeed(p Player) {
 	gameState.Players[p.ID]=p
 }
 
-func handleIncomingMessages() {
-        messages := incomingMessages
-        incomingMessages =  []Message{}
-
-        for _, msg := range messages {
-            if msg.Type == "START" {
-		        player := createPlayer(msg.Sender.ID)
-		        gameState.Players[msg.Sender.ID] = player
-		        calculateSpeed(player)
-		        emitID(msg.Sender)
-		    }
-            if msg.Type == "MOUSEPOS" {
-		        player := gameState.Players[msg.ID]
-		        player.MousePos = Position{X:msg.MouseX,Y:msg.MouseY,}
-		        gameState.Players[msg.ID]=player
-            }
-            if msg.Type == "CREATEBOT" {
-                    loggerino.log(prod, "bot created")
-                    createBot()
-            }
-        }
+func handleIncomingMessage(msg *socket.Message) {
+    if msg.Type == "START" {
+	player := createPlayer(msg.Sender.ID)
+	gameState.Players[msg.Sender.ID] = player
+	calculateSpeed(player)
+	emitID(msg.Sender)
+    } else if msg.Type == "MOUSEPOS" {
+	loggerino.log(prod, *msg)
+	player := gameState.Players[msg.ID]
+	player.MousePos = Position{X:msg.Payload.MouseX, Y:msg.Payload.MouseY,}
+	gameState.Players[msg.ID] = player
+    } else if msg.Type == "CREATEBOT" {
+	loggerino.log(prod, "bot created")
+	createBot()
+    }
 }
 
 //***************************************************************************
@@ -375,8 +316,9 @@ func moveBot(id int) {
         loopTime, _ := time.ParseDuration("2s")
     for {
 	botMouse := getRandomPos(int(gameState.Size), int(gameState.Size))
-	botMove := Message{Type:"MOUSEPOS", ID:id, MouseX: botMouse.X, MouseY: botMouse.Y,}
-	incomingMessages = append(incomingMessages, botMove)
+	payload := Payload{MouseX: botMouse.X, MouseY: botMouse.Y}
+	botMove := socket.Message{Type:"MOUSEPOS", ID:id, Payload:payload,}
+	room.FakeIncomingMessage(&botMove)
         time.Sleep(loopTime)
     }
 }
@@ -428,17 +370,7 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func socketHandler(w http.ResponseWriter, r *http.Request) {
-    conn, err := upgrader.Upgrade(w, r, nil)
-    if err != nil {
-        loggerino.log(error, err)
-        return
-    }
-    var client Client
-    client.Connection = conn
-    client.ID = generateID()
-    client.Name = ""
-    clients[&client]=true
-    listenToSocket(client)
+    socket.ServeWs(room, w, r)
 }
 
 func initRouter() *mux.Router {
@@ -458,50 +390,27 @@ func startServer() {
 //***************************************************************************
 //SOCKET FUNCTIONS
 //***************************************************************************
-func emitID(client *Client) {
-	message := Message{ID:client.ID,Type:"ID",}
-	encodedMessage, err := json.Marshal(message)
-	if(err != nil) {
-        loggerino.log(error, err)
-		return
-	}
-	loggerino.log(prod, "gave client %v ID %d", &client, client.ID)
-	client.Connection.WriteMessage(websocket.TextMessage,encodedMessage)
+func removeClient(client *socket.Client) {
+    removePlayer(client.ID)
+}
+func emitID(client *socket.Client) {
+    message := socket.Message{ID:client.ID,Type:"ID",Reciever:client}
+    room.BroadcastMessage(&message)
 }
 
 func broadcastState() {
 	outgoingState := OutgoingState{Size:gameState.Size}
-	message := Message{Type:"STATE",State:outgoingState,}
+	payload := Payload{State:outgoingState,}
+	message := socket.Message{Type:"STATE",Payload:payload,}
     loggerino.log(micro, "broadcasting %v to each client:", gameState)
-    for client, _ := range clients {
-	message.State.CurrentPlayer = gameState.Players[client.ID]
-	message.State.Objects = getSurroundingChunks(message.State.CurrentPlayer.Coords)
-	message.State.Objects = append(message.State.Objects, createPlayerObjects()...)
-	encodedMessage, err := json.Marshal(message)
-	if(err != nil) {
-            loggerino.log(error, err)
-            return
-	}
-
-        client.Connection.WriteMessage(websocket.TextMessage, encodedMessage)
+    for client, _ := range room.Clients {
+	message.Payload.State.CurrentPlayer = gameState.Players[client.ID]
+	message.Payload.State.Objects = getSurroundingChunks(message.Payload.State.CurrentPlayer.Coords)
+	message.Payload.State.Objects = append(message.Payload.State.Objects, createPlayerObjects()...)
+	message.Reciever = client
+	room.BroadcastMessage(&message)
 	loggerino.log(micro, "broadcast to client %v", client)
     }
-}
-
-func listenToSocket(client Client) {
-    for {
-          _, msg, err := client.Connection.ReadMessage()
-          if err != nil {
-                  break
-          }
-         var message Message
-         json.Unmarshal(msg, &message)
-	     message.Sender = &client
-         incomingMessages = append(incomingMessages, message)
-         loggerino.log(micro, "added message to incoming queue")
-         loggerino.log(micro, message)
-
-   }
 }
 
 //***************************************************************************
@@ -510,12 +419,17 @@ func listenToSocket(client Client) {
 
 func initGlobals() {
     loggerino = Loggerino{Level:prod}
-    clients = make(map[*Client]bool)
     gameState.Players = make(map[int]Player)
     randomSource = rand.New(rand.NewSource(99))
     lastID = 0
-    upgrader = websocket.Upgrader{}
-    upgrader.CheckOrigin = func(r *http.Request) bool {return true}
+}
+
+func initRoom() {
+    room = socket.NewRoom()
+    room.SetIncomingCallback(handleIncomingMessage)
+    room.SetRegisterCallback(emitID)
+    room.SetUnregisterCallback(removeClient)
+    go room.Run()
 }
 
 func setLogLevel() {
@@ -532,14 +446,13 @@ func runWrapper() {
 }
 
 func run() {
-    handleIncomingMessages()
     gameLoop()
     broadcastState()
 }
 
-
 func main() {
     initGlobals()
+    initRoom()
     setLogLevel()
     initState()
     lastUpdated = time.Now()

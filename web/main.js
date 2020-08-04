@@ -61,7 +61,7 @@ socket.onmessage = function(e) {
 		id = message.ID
 	} else if(message.Type === "STATE") {
 		//messageInfo.textContent=JSON.stringify(message)
-		gameState = message.State
+		gameState = message.Payload.State
 		player = gameState.CurrentPlayer
 		if(player) {
 			playerCoords = {X:player.Coords.X, Y:player.Coords.Y}
@@ -97,9 +97,10 @@ function updateMousePos() {
 	let posMessage = {}
 	posMessage.Type = "MOUSEPOS"
 	posMessage.ID = id
+	posMessage.Payload = {}
 	let gameCoords = convertScreenToGameCoords(mousePos)
-	posMessage.MouseX = gameCoords.X
-	posMessage.MouseY = gameCoords.Y 
+	posMessage.Payload.MouseX = gameCoords.X
+	posMessage.Payload.MouseY = gameCoords.Y 
 	mouseInfo.textContent=JSON.stringify(posMessage);
 	sendMessage(posMessage)
 }
@@ -112,10 +113,12 @@ function render() {
 	let screenCoords = convertGameCoordsToScreen({X:0,Y:0})
 	ctx.fillRect(screenCoords.X, screenCoords.Y, gameState.Size, gameState.Size)
 	let obs = gameState.Objects
-	Object.keys(obs).forEach(key => {
-		let o = obs[key]
+	if(obs) {
+	    Object.keys(obs).forEach(key => {
+	        let o = obs[key]
 		drawObject(o)
-	})
+	    })
+	}
 	if(player && player.RespawnMillis > 0) {
 		drawDeathScreen()
 	}
