@@ -292,7 +292,6 @@ func handleIncomingMessage(msg *socket.Message) {
 	calculateSpeed(player)
 	emitID(msg.Sender)
     } else if msg.Type == "MOUSEPOS" {
-	loggerino.log(prod, *msg)
 	player := gameState.Players[msg.ID]
 	player.MousePos = Position{X:msg.Payload.MouseX, Y:msg.Payload.MouseY,}
 	gameState.Players[msg.ID] = player
