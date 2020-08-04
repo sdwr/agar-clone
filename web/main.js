@@ -11,8 +11,9 @@ const devTools = document.getElementById("dev-tools");
 const ctx = canvas.getContext('2d');
 const socket = new WebSocket("ws://"+SERVER_URL+"/socket");
 
-const windowSize = 400;
-
+const maxCanvasSize = 1000
+let canvasSize = 800;
+resizeCanvas()
 let lastUpdated = 0;
 
 let gameState = {Players:[]};
@@ -31,9 +32,9 @@ class Position {
 }
 
 //CANVAS
+window.addEventListener('resize', resizeCanvas, false)
 canvas.addEventListener('mousemove', function(e) {
 	mousePos = getMousePos(e)
-
 }, false);
 //open dev tools w ` 
 document.addEventListener('keydown', function(e) {
@@ -79,19 +80,22 @@ function startGame(){
 	let startMessage = {}
 	startMessage.Type = "START"
 	sendMessage(startMessage)
+	resizeCanvas()
 }
 
 
 
 function convertScreenToGameCoords(pos) {
-	return {X: pos.X + playerCoords.X - windowSize/2,
-		Y: pos.Y + playerCoords.Y - windowSize/2}
+	return {X: pos.X + playerCoords.X - canvas.width/2,
+		Y: pos.Y + playerCoords.Y - canvas.height/2}
 }
 
 function convertGameCoordsToScreen(pos) {
-	return {X: pos.X - playerCoords.X + windowSize/2,
-		Y: pos.Y - playerCoords.Y + windowSize/2}
+	return {X: pos.X - playerCoords.X + canvas.width/2,
+		Y: pos.Y - playerCoords.Y + canvas.height/2}
 }
+
+//add scale based on player size
 
 function updateMousePos() {
 	let posMessage = {}
@@ -106,10 +110,15 @@ function updateMousePos() {
 }
 
 //DRAW FUNCTIONS
+
+function resizeCanvas() {
+    canvas.width = Math.min(window.innerWidth*.9, maxCanvasSize)
+    canvas.height = Math.min(window.innerHeight*.9, maxCanvasSize)
+}
 function render() {
 	ctx.fillStyle = 'black'
-	ctx.fillRect(0,0,windowSize,windowSize)
-	ctx.fillStyle = 'green'
+	ctx.fillRect(0,0,canvas.width,canvas.height)
+	ctx.fillStyle = "#a5ff8f"
 	let screenCoords = convertGameCoordsToScreen({X:0,Y:0})
 	ctx.fillRect(screenCoords.X, screenCoords.Y, gameState.Size, gameState.Size)
 	let obs = gameState.Objects
@@ -126,7 +135,7 @@ function render() {
 
 function drawDeathScreen() {
 	ctx.fillStyle = "rgba(125,125,125,0.4)"
-	ctx.fillRect(0,0,windowSize,windowSize)
+	ctx.fillRect(0,0,canvas.width, canvas.height)
 }
 
 function drawObject(o) {
@@ -140,7 +149,7 @@ function drawObject(o) {
 		ctx.fillStyle = 'red'
 	}
 	if(o.ID == player.ID) {
-		ctx.fillStyle = "blue"
+		ctx.fillStyle = "#ff8fa5"
 	}
 	ctx.fillRect(midX-halfSize, midY-halfSize, halfSize*2, halfSize*2)
 

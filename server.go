@@ -45,6 +45,8 @@ var loggerino Loggerino
 
 var lastID int
 
+var messages []*socket.Message
+
 var room *socket.Room
 
 var gameState State
@@ -55,9 +57,9 @@ var randomSource *rand.Rand
 var router *mux.Router
 
 func initState() {
-    gameState.Size = 1000
+    gameState.Size = 3000
     gameState.PlayerSize = 20
-    gameState.ChunkSize = 250
+    gameState.ChunkSize = 500
     createChunks()
     addPellets(500)
 }
@@ -288,21 +290,7 @@ func calculateSpeed(p Player) {
 	gameState.Players[p.ID]=p
 }
 
-func handleIncomingMessage(msg *socket.Message) {
-    if msg.Type == "START" {
-	player := createPlayer(msg.Sender.ID)
-	gameState.Players[msg.Sender.ID] = player
-	calculateSpeed(player)
-	emitID(msg.Sender)
-    } else if msg.Type == "MOUSEPOS" {
-	player := gameState.Players[msg.ID]
-	player.MousePos = Position{X:msg.Payload.MouseX, Y:msg.Payload.MouseY,}
-	gameState.Players[msg.ID] = player
-    } else if msg.Type == "CREATEBOT" {
-	loggerino.log(prod, "bot created")
-	createBot()
-    }
-}
+
 
 //***************************************************************************
 //TESTING FUNCTIONS
@@ -393,6 +381,20 @@ func startServer() {
 //***************************************************************************
 //SOCKET FUNCTIONS
 //***************************************************************************
+func addEmitIDToQueue(client *socket.Client){
+    msg := &socket.Message{Type:"INIT",Sender:client}
+    addToQueue(msg)
+}
+
+func addRemovePlayerToQueue(client *socket.Client){
+    msg := &socket.Message{Type:"REMOVE",Sender:client}
+    addToQueue(msg)
+}
+
+func addToQueue(msg *socket.Message) {
+    messages = append(messages, msg)
+}
+
 func removeClient(client *socket.Client) {
     removePlayer(client.ID)
 }
@@ -401,6 +403,34 @@ func emitID(client *socket.Client) {
     room.BroadcastMessage(&message)
 }
 
+func processMessages() {
+    messageQueue := messages
+    messages = []*socket.Message{}
+    for _, m := range messageQueue {
+	handleIncomingMessage(m)
+    }
+}
+
+func handleIncomingMessage(msg *socket.Message) {
+    loggerino.log(message, *msg)
+    if msg.Type == "INIT" {
+	emitID(msg.Sender)
+    } else if msg.Type == "REMOVE" {
+	removeClient(msg.Sender)
+    } else if msg.Type == "START" {
+	player := createPlayer(msg.Sender.ID)
+	gameState.Players[msg.Sender.ID] = player
+	calculateSpeed(player)
+	emitID(msg.Sender)
+    } else if msg.Type == "MOUSEPOS" {
+	player := gameState.Players[msg.ID]
+	player.MousePos = Position{X:msg.Payload.MouseX, Y:msg.Payload.MouseY,}
+	gameState.Players[msg.ID] = player
+    } else if msg.Type == "CREATEBOT" {
+	loggerino.log(prod, "bot created")
+	createBot()
+    }
+}
 func broadcastState() {
 	outgoingState := OutgoingState{Size:gameState.Size}
 	payload := Payload{State:outgoingState,}
@@ -425,6 +455,7 @@ func initGlobals() {
     gameState.Players = make(map[int]Player)
     randomSource = rand.New(rand.NewSource(99))
     lastID = 0
+    messages = []*socket.Message{} 
 }
 
 //crashing with 10+ players because these callbacks are async
@@ -432,9 +463,9 @@ func initGlobals() {
 //TODO: make a queue for these bad boys (mousePos updates)
 func initRoom() {
     room = socket.NewRoom()
-    room.SetIncomingCallback(handleIncomingMessage)
-    room.SetRegisterCallback(emitID)
-    room.SetUnregisterCallback(removeClient)
+    room.SetIncomingCallback(addToQueue)
+    room.SetRegisterCallback(addEmitIDToQueue)
+    room.SetUnregisterCallback(addRemovePlayerToQueue)
     go room.Run()
 }
 
@@ -452,6 +483,7 @@ func runWrapper() {
 }
 
 func run() {
+    processMessages()
     gameLoop()
     broadcastState()
 }
