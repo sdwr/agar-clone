@@ -14,6 +14,7 @@ import (
     "github.com/gorilla/mux"
 
     "github.com/sdwr/agar-clone/socket"
+    "github.com/sdwr/agar-clone/auth"
     . "github.com/sdwr/agar-clone/types"
 )
 
@@ -50,6 +51,8 @@ var gameState State
 var lastUpdated time.Time
 
 var randomSource *rand.Rand
+
+var router *mux.Router
 
 func initState() {
     gameState.Size = 1000
@@ -364,7 +367,7 @@ func normalizeVector(pos Position) Position {
 //******************************************************************************
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-        body, _:= ioutil.ReadFile("./web/index/html")
+        body, _:= ioutil.ReadFile("./web/index.html")
         fmt.Fprintf(w, "%s", body)
 }
 
@@ -372,16 +375,17 @@ func socketHandler(w http.ResponseWriter, r *http.Request) {
     socket.ServeWs(room, w, r)
 }
 
-func initRouter() *mux.Router {
-    router := mux.NewRouter()
-    router.HandleFunc("/", indexHandler)
+func initRouter() {
+    router = mux.NewRouter()
+   }
+
+func addRoutes() {
     router.HandleFunc("/socket", socketHandler)
-    return router
+    router.PathPrefix("/web/").Handler(http.StripPrefix("/web/", http.FileServer(http.Dir("./web/"))))
+    router.HandleFunc("/", indexHandler)
 }
 
-
 func startServer() {
-    router := initRouter()
     loggerino.log(prod, "running server on port 4404")
     log.Fatal(http.ListenAndServe(":4404", router))
 }
@@ -423,6 +427,9 @@ func initGlobals() {
     lastID = 0
 }
 
+//crashing with 10+ players because these callbacks are async
+//and overlapping the player reads/writes
+//TODO: make a queue for these bad boys (mousePos updates)
 func initRoom() {
     room = socket.NewRoom()
     room.SetIncomingCallback(handleIncomingMessage)
@@ -457,5 +464,8 @@ func main() {
     lastUpdated = time.Now()
     loggerino.log(prod, "Starting game loop")
     go runWrapper()
+    initRouter()
+    auth.LoadAuth(router)
+    addRoutes()
     startServer()
 }
