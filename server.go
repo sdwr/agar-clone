@@ -115,7 +115,7 @@ func initState() {
     addPellets(500)
 }
 
-//chunksize must be no greater than 1/1000th of the map size 
+//chunksize must be no greater than 1/100th of the map size 
 func createChunks() {
     gameState.Chunks = make(map[int][]Object)
     for x:= 0; x < int(gameState.Size); x+= gameState.ChunkSize {
@@ -189,6 +189,7 @@ func gameLoop() {
     if elapsedTime.Milliseconds() > 30 {
 	    loggerino.log(message, "Warning: last frame took %d ms to run", elapsedTime.Milliseconds())
     }
+    loggerino.log(micro, elapsedTime.Milliseconds())
     minimumLoop, _ := time.ParseDuration("33ms")
     time.Sleep(minimumLoop - elapsedTime)
     elapsedTime = timeElapsed(lastUpdated)
@@ -200,10 +201,10 @@ func gameLoop() {
 
 func updatePlayers(elapsedMillis int) {
 	players := gameState.Players
-	for key, curr := range players {
+    for key, curr := range players {
 	    if curr.RespawnMillis > 0 {
 		calculateRespawn(curr, elapsedMillis)
-	    	curr = gameState.Players[curr.ID]
+		curr = gameState.Players[curr.ID]
 	    }
             dist := curr.Speed * float64(elapsedMillis)
 	    dir := addPos(curr.MousePos, negatePos(curr.Coords))
@@ -244,7 +245,7 @@ func checkCollision(p Player, o Object) bool {
 	pRight := p.Coords.X+p.Size/2
 	pUp := p.Coords.Y-p.Size/2
 	pDown := p.Coords.Y + p.Size/2
-	
+
 	oLeft := o.Coords.X-o.Size/2
 	oRight := o.Coords.X+o.Size/2
 	oUp := o.Coords.Y-o.Size/2
@@ -343,17 +344,41 @@ func handleIncomingMessages() {
 
         for _, msg := range messages {
             if msg.Type == "START" {
-		player := createPlayer(msg.Sender.ID)
-           	gameState.Players[msg.Sender.ID] = player
-		calculateSpeed(player)
-		emitID(msg.Sender)
-		}
+		        player := createPlayer(msg.Sender.ID)
+		        gameState.Players[msg.Sender.ID] = player
+		        calculateSpeed(player)
+		        emitID(msg.Sender)
+		    }
             if msg.Type == "MOUSEPOS" {
-		    player := gameState.Players[msg.ID]
-		    player.MousePos = Position{X:msg.MouseX,Y:msg.MouseY,}
-		    gameState.Players[msg.ID]=player
+		        player := gameState.Players[msg.ID]
+		        player.MousePos = Position{X:msg.MouseX,Y:msg.MouseY,}
+		        gameState.Players[msg.ID]=player
+            }
+            if msg.Type == "CREATEBOT" {
+                    loggerino.log(prod, "bot created")
+                    createBot()
             }
         }
+}
+
+//***************************************************************************
+//TESTING FUNCTIONS
+//***************************************************************************
+func createBot(){
+    bot := createPlayer(generateID())
+    gameState.Players[bot.ID] = bot
+    calculateSpeed(bot)
+    go moveBot(bot.ID)
+}
+
+func moveBot(id int) {
+        loopTime, _ := time.ParseDuration("2s")
+    for {
+	botMouse := getRandomPos(int(gameState.Size), int(gameState.Size))
+	botMove := Message{Type:"MOUSEPOS", ID:id, MouseX: botMouse.X, MouseY: botMouse.Y,}
+	incomingMessages = append(incomingMessages, botMove)
+        time.Sleep(loopTime)
+    }
 }
 
 //***************************************************************************
@@ -456,14 +481,13 @@ func broadcastState() {
 	if(err != nil) {
             loggerino.log(error, err)
             return
-    	}
+	}
 
         client.Connection.WriteMessage(websocket.TextMessage, encodedMessage)
 	loggerino.log(micro, "broadcast to client %v", client)
     }
 }
-//does mux router make a subroutine for this?
-//gonna have to test this out
+
 func listenToSocket(client Client) {
     for {
           _, msg, err := client.Connection.ReadMessage()

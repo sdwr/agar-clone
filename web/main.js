@@ -7,6 +7,7 @@ const playerInfo = document.getElementById("player-info");
 const mouseInfo = document.getElementById("mouse-info");
 const messageInfo = document.getElementById("message-info");
 const fpsInfo = document.getElementById("fps-info");
+const devTools = document.getElementById("dev-tools");
 const ctx = canvas.getContext('2d');
 const socket = new WebSocket("ws://"+SERVER_URL+"/socket");
 
@@ -33,6 +34,16 @@ class Position {
 canvas.addEventListener('mousemove', function(e) {
 	mousePos = getMousePos(e)
 
+}, false);
+//open dev tools w ` 
+document.addEventListener('keydown', function(e) {
+	if(e.keyCode == 192) {
+        if (devTools.style.display == "none") {
+		    devTools.style.display = "block";
+	    } else {
+		    devTools.style.display = "none"
+	}
+	}
 }, false);
 
 function getMousePos(e) {
@@ -69,6 +80,8 @@ function startGame(){
 	startMessage.Type = "START"
 	sendMessage(startMessage)
 }
+
+
 
 function convertScreenToGameCoords(pos) {
 	return {X: pos.X + playerCoords.X - windowSize/2,
@@ -151,4 +164,11 @@ toggleDebug.onclick = function() {
 	} else {
 		debugPanel.style.display = "none"
 	}
+}
+
+const addBot = document.getElementById("create-bot");
+addBot.onclick = function createBot(){
+	let createBotMessage = {}
+	createBotMessage.Type = "CREATEBOT"
+	sendMessage(createBotMessage)
 }
