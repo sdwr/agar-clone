@@ -121,7 +121,8 @@ func createPlayerObject(p Player) Object {
 	return Object{ Type: "PLAYER",
 			ID: p.ID,
 			Size: p.Size,
-			Coords: p.Coords,}
+			Coords: p.Coords,
+			RespawnMillis: p.RespawnMillis}
 }
 
 func createPlayerObjects() []Object {
@@ -153,32 +154,38 @@ func gameLoop() {
 
 func updatePlayers(elapsedMillis int) {
 	players := gameState.Players
-    for key, curr := range players {
+    for _, curr := range players {
 	    if curr.RespawnMillis > 0 {
 		calculateRespawn(curr, elapsedMillis)
 		curr = gameState.Players[curr.ID]
+	    } else {
+		updatePlayerPosition(curr, elapsedMillis)
 	    }
-            dist := curr.Speed * float64(elapsedMillis)
-	    dir := addPos(curr.MousePos, negatePos(curr.Coords))
-	    scaledDir := multPos(normalizeVector(dir),dist)
-	    curr.Coords = addPos(scaledDir, curr.Coords)
-	    //check wall boundary
-	    gameSizeFloat := float64(gameState.Size)
-	    halfSize := float64(curr.Size/2)
-	    if curr.Coords.X < 0+halfSize {
-		curr.Coords.X = 0+halfSize
-	    }
-	    if curr.Coords.X > gameSizeFloat-halfSize {
-		curr.Coords.X = gameSizeFloat-halfSize
-	    }
-	    if curr.Coords.Y < 0+halfSize {
-		curr.Coords.Y = 0+halfSize
-	    }
-	    if curr.Coords.Y > gameSizeFloat-halfSize {
-		curr.Coords.Y = gameSizeFloat-halfSize
-	    }
-	    gameState.Players[key]=curr
     }
+}
+
+func updatePlayerPosition(curr Player, elapsedMillis int) {
+    dist := curr.Speed * float64(elapsedMillis)
+    dir := addPos(curr.MousePos, negatePos(curr.Coords))
+    scaledDir := multPos(normalizeVector(dir),dist)
+    curr.Coords = addPos(scaledDir, curr.Coords)
+    //check wall boundary
+    gameSizeFloat := float64(gameState.Size)
+    halfSize := float64(curr.Size/2)
+    if curr.Coords.X < 0+halfSize {
+        curr.Coords.X = 0+halfSize
+    }
+    if curr.Coords.X > gameSizeFloat-halfSize {
+	curr.Coords.X = gameSizeFloat-halfSize
+    }
+    if curr.Coords.Y < 0+halfSize {
+	curr.Coords.Y = 0+halfSize
+    }
+    if curr.Coords.Y > gameSizeFloat-halfSize {
+	curr.Coords.Y = gameSizeFloat-halfSize
+    }
+    gameState.Players[curr.ID]=curr
+
 }
 
 func calculateRespawn(p Player, millis int) {
@@ -251,19 +258,18 @@ func resolveCollision(p Player, o Object) {
 		createPellet()
 	}
 	if(o.Type == "PLAYER") {
-		if o.Size * 0.8 > p.Size {
+		otherP := gameState.Players[o.ID]
+		if otherP.Size * 0.8 > p.Size && p.RespawnMillis <= 0 {
 			killPlayer(p)
-			increaseSize(gameState.Players[o.ID],p.Size/2)
-		} else if p.Size * 0.8 > o.Size {
-			killPlayer(gameState.Players[o.ID])
-			increaseSize(p,o.Size/2)
+			increaseSize(otherP,p.Size/2)
+		} else if p.Size * 0.8 > otherP.Size && otherP.RespawnMillis <= 0 {
+			killPlayer(otherP)
+			increaseSize(p,otherP.Size/2)
 		}
 	}
 }
 
 func killPlayer(p Player) {
-	p.Coords = Position{gameState.Size/2,float64(-20)}
-	p.Size = 0
 	p.Speed = 0
 	p.RespawnMillis = 5000
 	gameState.Players[p.ID] = p

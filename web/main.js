@@ -86,25 +86,21 @@ function startGame(){
 
 //note player coords are in game space
 function convertScreenToGameCoords(pos) {
-	let descaledX = (pos.X - canvas.width/2) / calculateXScale()
-	let descaledY = (pos.Y - canvas.height/2) / calculateYScale()
+	let descaledX = (pos.X - canvas.width/2) / calculateScale()
+	let descaledY = (pos.Y - canvas.height/2) / calculateScale()
 	return {X: descaledX + playerCoords.X,
 		Y: descaledY + playerCoords.Y}
 }
 
 function convertGameCoordsToScreen(pos) {
-	let scaledX = (pos.X - playerCoords.X) * calculateXScale()
-	let scaledY = (pos.Y - playerCoords.Y) * calculateYScale()
+	let scaledX = (pos.X - playerCoords.X) * calculateScale()
+	let scaledY = (pos.Y - playerCoords.Y) * calculateScale()
 	return {X: scaledX + canvas.width/2,
 		Y: scaledY + canvas.height/2}
 }
 
-function calculateXScale(){
-		return 100 / player.Size
-}
-
-function calculateYScale(){
-	return calculateXScale()
+function calculateScale(){
+		return 50 / player.Size
 }
 
 function updateMousePos() {
@@ -174,6 +170,9 @@ function drawObject(o) {
 	}
 	if(o.ID == player.ID) {
 		color = "green"
+	}
+	if(o.Type == "PLAYER" && o.RespawnMillis > 0) {
+		return
 	}
 	drawRectFromGameMidpoint(o.Coords,o.Size,color)
 }

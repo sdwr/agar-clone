@@ -19,6 +19,7 @@ type Object struct {
     Size float64
     ID int
     Coords Position
+    RespawnMillis float64
 }
 
 type Player struct {
