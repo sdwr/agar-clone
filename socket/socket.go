@@ -61,7 +61,7 @@ var upgrader websocket.Upgrader
 //HELPER FUNCTIONS
 //**************************************************
 
-func generateID() int{
+func GenerateID() int{
     lastID++
     return lastID
 }
@@ -76,7 +76,7 @@ func messageCallback(m *Message){}
 
 func NewRoom() *Room {
 	initGlobals()
-	return &Room{ID:generateID(),
+	return &Room{ID:GenerateID(),
                         Name:"",
                         Settings: CreateRoomSettings(),
                         Clients:make(map[*Client]bool),
@@ -220,7 +220,7 @@ func ServeWs(room *Room, w http.ResponseWriter, r *http.Request) {
     		      connection: conn,
 		      send: make(chan []byte, 10),
 		      Name: "",
-		      ID: generateID(),
+		      ID: GenerateID(),
 	      }
     client.room.register <- client
 

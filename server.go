@@ -142,7 +142,7 @@ func gameLoop() {
 	    loggerino.log(message, "Warning: last frame took %d ms to run", elapsedTime.Milliseconds())
     }
     loggerino.log(micro, elapsedTime.Milliseconds())
-    minimumLoop, _ := time.ParseDuration("33ms")
+    minimumLoop, _ := time.ParseDuration("15ms")
     time.Sleep(minimumLoop - elapsedTime)
     elapsedTime = timeElapsed(lastUpdated)
     loggerino.log(micro, "starting game loop after %d ms ",elapsedTime.Milliseconds())
@@ -247,14 +247,16 @@ func checkCollisions() {
 func resolveCollision(p Player, o Object) {
 	if(o.Type == "PELLET") {
 		removeFromChunk(o)
-		increaseSize(p)
+		increaseSize(p,1)
 		createPellet()
 	}
 	if(o.Type == "PLAYER") {
-		if o.Size > p.Size {
+		if o.Size * 0.8 > p.Size {
 			killPlayer(p)
-		} else if p.Size > o.Size {
+			increaseSize(gameState.Players[o.ID],p.Size/2)
+		} else if p.Size * 0.8 > o.Size {
 			killPlayer(gameState.Players[o.ID])
+			increaseSize(p,o.Size/2)
 		}
 	}
 }
@@ -279,14 +281,14 @@ func createPellet() {
 
 }
 
-func increaseSize(p Player) {
-	p.Size++
+func increaseSize(p Player, amt float64) {
+	p.Size += amt
 	gameState.Players[p.ID]=p
 	calculateSpeed(p)
 }
 
 func calculateSpeed(p Player) {
-	p.Speed = (1 / float64(p.Size)) + 0.06
+	p.Speed = 0.06
 	gameState.Players[p.ID]=p
 }
 
@@ -296,7 +298,7 @@ func calculateSpeed(p Player) {
 //TESTING FUNCTIONS
 //***************************************************************************
 func createBot(){
-    bot := createPlayer(generateID())
+    bot := createPlayer(socket.GenerateID())
     gameState.Players[bot.ID] = bot
     calculateSpeed(bot)
     go moveBot(bot.ID)
@@ -316,10 +318,6 @@ func moveBot(id int) {
 //***************************************************************************
 //HELPER FUNCTIONS
 //***************************************************************************
-func generateID() int {
-    lastID++
-    return lastID
-}
 
 func timeElapsed(prev time.Time) time.Duration {
     currentTime := time.Now()
@@ -396,7 +394,7 @@ func addToQueue(msg *socket.Message) {
 }
 
 func removeClient(client *socket.Client) {
-    removePlayer(client.ID)
+    //do nothing
 }
 func emitID(client *socket.Client) {
     message := socket.Message{ID:client.ID,Type:"ID",Reciever:client}
@@ -435,7 +433,6 @@ func broadcastState() {
 	outgoingState := OutgoingState{Size:gameState.Size}
 	payload := Payload{State:outgoingState,}
 	message := socket.Message{Type:"STATE",Payload:payload,}
-    loggerino.log(micro, "broadcasting %v to each client:", gameState)
     for client, _ := range room.Clients {
 	message.Payload.State.CurrentPlayer = gameState.Players[client.ID]
 	message.Payload.State.Objects = getSurroundingChunks(message.Payload.State.CurrentPlayer.Coords)

@@ -11,7 +11,6 @@ const devTools = document.getElementById("dev-tools");
 const ctx = canvas.getContext('2d');
 const socket = new WebSocket("ws://"+SERVER_URL+"/socket");
 
-const maxCanvasSize = 1000
 let canvasSize = 800;
 resizeCanvas()
 let lastUpdated = 0;
@@ -83,19 +82,30 @@ function startGame(){
 	resizeCanvas()
 }
 
+//HELPER FUNCTIONS
 
-
+//note player coords are in game space
 function convertScreenToGameCoords(pos) {
-	return {X: pos.X + playerCoords.X - canvas.width/2,
-		Y: pos.Y + playerCoords.Y - canvas.height/2}
+	let descaledX = (pos.X - canvas.width/2) / calculateXScale()
+	let descaledY = (pos.Y - canvas.height/2) / calculateYScale()
+	return {X: descaledX + playerCoords.X,
+		Y: descaledY + playerCoords.Y}
 }
 
 function convertGameCoordsToScreen(pos) {
-	return {X: pos.X - playerCoords.X + canvas.width/2,
-		Y: pos.Y - playerCoords.Y + canvas.height/2}
+	let scaledX = (pos.X - playerCoords.X) * calculateXScale()
+	let scaledY = (pos.Y - playerCoords.Y) * calculateYScale()
+	return {X: scaledX + canvas.width/2,
+		Y: scaledY + canvas.height/2}
 }
 
-//add scale based on player size
+function calculateXScale(){
+		return 100 / player.Size
+}
+
+function calculateYScale(){
+	return calculateXScale()
+}
 
 function updateMousePos() {
 	let posMessage = {}
@@ -112,15 +122,17 @@ function updateMousePos() {
 //DRAW FUNCTIONS
 
 function resizeCanvas() {
-    canvas.width = Math.min(window.innerWidth*.9, maxCanvasSize)
-    canvas.height = Math.min(window.innerHeight*.9, maxCanvasSize)
+    canvas.width = window.innerWidth*.9
+    canvas.height = window.innerHeight*.9
 }
 function render() {
+	//map boundary background doesnt have to be scaled
 	ctx.fillStyle = 'black'
 	ctx.fillRect(0,0,canvas.width,canvas.height)
-	ctx.fillStyle = "#a5ff8f"
-	let screenCoords = convertGameCoordsToScreen({X:0,Y:0})
-	ctx.fillRect(screenCoords.X, screenCoords.Y, gameState.Size, gameState.Size)
+
+	//background does
+	drawRectFromGameCoords({X:0,Y:0},{X:gameState.Size,Y:gameState.Size},"#a5ff8f")
+	
 	let obs = gameState.Objects
 	if(obs) {
 	    Object.keys(obs).forEach(key => {
@@ -128,9 +140,24 @@ function render() {
 		drawObject(o)
 	    })
 	}
+	//death screen also doesn't need to be scaled
 	if(player && player.RespawnMillis > 0) {
 		drawDeathScreen()
 	}
+}
+
+function drawRectFromGameCoords(pos, pos2, color) {
+	let s1 = convertGameCoordsToScreen(pos)
+	let s2 = convertGameCoordsToScreen(pos2)
+	ctx.fillStyle = color
+	ctx.fillRect(s1.X, s1.Y, s2.X-s1.X, s2.Y-s1.Y)
+}
+
+function drawRectFromGameMidpoint(pos, size, color) {
+	let halfSize = size/2
+	
+	drawRectFromGameCoords({X:pos.X-halfSize,Y:pos.Y-halfSize}
+		,{X:pos.X+halfSize,Y:pos.Y+halfSize}, color)
 }
 
 function drawDeathScreen() {
@@ -139,20 +166,16 @@ function drawDeathScreen() {
 }
 
 function drawObject(o) {
-	let screenCoords = convertGameCoordsToScreen(o.Coords)
-	let halfSize = o.Size/2
-	let midX = screenCoords.X 
-	let midY = screenCoords.Y
+	let color = 'green'
 	if(o.Type == "PELLET") {
-		ctx.fillStyle = 'yellow'	
+		color = 'yellow'	
 	} else if(o.Type == "PLAYER") {
-		ctx.fillStyle = 'red'
+		color = 'red'
 	}
 	if(o.ID == player.ID) {
-		ctx.fillStyle = "#ff8fa5"
+		color = "green"
 	}
-	ctx.fillRect(midX-halfSize, midY-halfSize, halfSize*2, halfSize*2)
-
+	drawRectFromGameMidpoint(o.Coords,o.Size,color)
 }
 
 const startButton = document.getElementById("start-button");
