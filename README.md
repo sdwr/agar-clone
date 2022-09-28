@@ -1,5 +1,10 @@
 agar clone in progress
 
+Build:
+----------
+"go get" in main directory
+
+
 Running:
 --------
 launch server with "go run server.go <log level>",
